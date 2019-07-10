@@ -130,16 +130,10 @@ defmodule Chroxy.ChromeServer do
   @doc false
   def init(args) do
     config = Application.get_env(:chroxy, __MODULE__)
-
-    opts =
-      default_opts()
-      |> Keyword.merge(config)
-      |> Keyword.merge(args)
-
     page_wait_ms = Keyword.get(config, :page_wait_ms) |> String.to_integer()
     send(self(), :launch)
     Process.send_after(self(), :stop_if_not_ready, @ready_check_ms)
-    {:ok, %{options: opts, session: nil, page_wait_ms: page_wait_ms}}
+    {:ok, %{options: opts(config, args), session: nil, page_wait_ms: page_wait_ms}}
   end
 
   @doc false
@@ -313,35 +307,42 @@ defmodule Chroxy.ChromeServer do
   end
 
   ##
-  # Internal
+  # Options
 
-  defp exec_options do
-    %{pty: true, stdin: true, stdout: true, stderr: true}
+  def opts(module_config, init_args) do
+    overrides = Keyword.merge(module_config, init_args)
+    {headless, overrides} = Keyword.pop(overrides, :headless, true)
+
+    [
+      chrome_flags: chrome_flags(headless: headless),
+      chrome_path: chrome_path(),
+      chrome_port: 9222,
+      crash_dumps_dir: "/tmp",
+      verbose_logging: 0,
+    ]
+    |> Keyword.merge(overrides)
   end
 
-  defp default_opts do
-    [
-      chrome_port: 9222,
-      chrome_path: chrome_path(),
-      chrome_flags: ~w(
-        --headless
-        --disable-gpu
-        --disable-translate
-        --disable-extensions
-        --disable-background-networking
-        --safebrowsing-disable-auto-update
-        --enable-logging
-        --disable-sync
-        --metrics-recording-only
-        --disable-default-apps
-        --mute-audio
-        --no-first-run
-        --no-sandbox
-        --incognito
-      ),
-      verbose_logging: 0,
-      crash_dumps_dir: "/tmp"
-    ]
+  defp chrome_flags(headless: true) do
+    ["--headless" | chrome_flags(headless: false)]
+  end
+
+  defp chrome_flags(headless: false) do
+    ~w(
+      --disable-gpu
+      --disable-translate
+      --disable-extensions
+      --disable-background-networking
+      --safebrowsing-disable-auto-update
+      --enable-logging
+      --disable-sync
+      --metrics-recording-only
+      --disable-default-apps
+      --mute-audio
+      --no-first-run
+      --no-sandbox
+      --incognito
+    )
   end
 
   defp chrome_path do
@@ -352,5 +353,9 @@ defmodule Chroxy.ChromeServer do
       {:unix, _} ->
         "/usr/bin/google-chrome"
     end
+  end
+
+  defp exec_options do
+    %{pty: true, stdin: true, stdout: true, stderr: true}
   end
 end
